@@ -1,46 +1,31 @@
 #!/bin/bash
 
-
 # 检查root权限并更新系统
 root() {
-    # 检查root权限
     if [[ ${EUID} -ne 0 ]]; then
         echo "Error: This script must be run as root!" 1>&2
         exit 1
     fi
-    
-    # 更新系统和安装基础依赖
     echo "正在更新系统和安装依赖"
     if [ -f "/usr/bin/apt-get" ]; then
         apt-get update -y && apt-get upgrade -y
-        apt-get install -y gawk curl
+        apt-get install -y gawk curl openssl
     else
         yum update -y && yum upgrade -y
-        yum install -y epel-release gawk curl
+        yum install -y epel-release gawk curl openssl
     fi
 }
 
-# 获取随机端口
-port() {    
-    local port1 port2    
-    port1=$(shuf -i 1024-65000 -n 1)
-    while ss -ltn | grep -q ":$port1"; do
-        port1=$(shuf -i 1024-65000 -n 1)
-    done    
-    port2=$(shuf -i 1024-65000 -n 1)
-    while ss -ltn | grep -q ":$port2" || [ "$port2" -eq "$port1" ]; do
-        port2=$(shuf -i 1024-65000 -n 1)
-    done
-    
-    PORT1=$port1
-    PORT2=$port2    
-}
-
-# 配置和启动Xray
+# 配置和启动 Xray
 xray() {
-    # 安装Xray内核
+    # 安装 Xray 内核
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-    # 生成所需随机参数
+
+    # 固定端口
+    PORT1=44448    # Shadowsocks 2022 固定端口
+    PORT2=2096     # VLESS+REALITY+XHTTP 固定端口
+
+    # 生成随机参数
     path=$(openssl rand -hex 6)
     uuid=$(cat /proc/sys/kernel/random/uuid)
     psk=$(openssl rand -base64 16 | tr -d '\n')
@@ -49,12 +34,10 @@ xray() {
     PrivateKey=$(echo "${X25519Key}" | head -1 | awk '{print $3}')
     PublicKey=$(echo "${X25519Key}" | tail -n 1 | awk '{print $3}')
 
-    # 配置config.json
+    # 写入 config.json
     cat >/usr/local/etc/xray/config.json <<EOF
 {
-  "log": {
-    "loglevel": "warning"
-  },
+  "log": { "loglevel": "warning" },
   "inbounds": [
     {
       "port": ${PORT1},
@@ -69,92 +52,52 @@ xray() {
       "port": ${PORT2},
       "protocol": "vless",
       "settings": {
-        "clients": [
-          {
-            "id": "${uuid}",
-            "flow": ""
-          }
-        ],
-        "decryption": "none",
-        "fallbacks": []
+        "clients":[{ "id":"${uuid}", "flow":"" }],
+        "decryption":"none","fallbacks":[]
       },
-      "streamSettings": {
-        "network": "xhttp",
-        "security": "reality",
-        "realitySettings": {
-          "show": false,
-          "dest": "www.tesla.com:443",
-          "xver": 0,
-          "serverNames": [
-            "www.tesla.com"
-          ],
-          "privateKey": "${PrivateKey}",
-          "shortIds": [
-            "123abc"
-          ],
-          "fingerprint": "chrome"
+      "streamSettings":{
+        "network":"xhttp","security":"reality",
+        "realitySettings":{
+          "show":false,"dest":"www.tesla.com:443","xver":0,
+          "serverNames":["www.tesla.com"],
+          "privateKey":"${PrivateKey}",
+          "shortIds":["123abc"],
+          "fingerprint":"chrome"
         },
-        "xhttpSettings": {
-          "path": "${path}",
-          "host": "",
-          "headers": {},
-          "scMaxBufferedPosts": 30,
-          "scMaxEachPostBytes": "1000000",
-          "noSSEHeader": false,
-          "xPaddingBytes": "100-1000",
-          "mode": "auto"
+        "xhttpSettings":{
+          "path":"${path}","host":"","headers":{},
+          "scMaxBufferedPosts":30,"scMaxEachPostBytes":"1000000",
+          "noSSEHeader":false,"xPaddingBytes":"100-1000","mode":"auto"
         }
       },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": [
-          "http",
-          "tls",
-          "quic"
-        ]
-      }
+      "sniffing":{ "enabled":true,"destOverride":["http","tls","quic"] }
     }
   ],
-  "outbounds": [
-    {
-      "protocol": "freedom",
-      "tag": "direct"
-    }
-  ]
+  "outbounds":[{ "protocol":"freedom","tag":"direct" }]
 }
 EOF
 
-    # 启动Xray服务
-    systemctl enable xray.service && systemctl restart xray.service
-    
-    # 获取IP并生成客户端配置
-    HOST_IP=$(curl -s -4 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | awk -F "[=]" '{print $2}')
-    if [[ -z "${HOST_IP}" ]]; then
-        HOST_IP=$(curl -s -6 http://www.cloudflare.com/cdn-cgi/trace | grep "ip" | awk -F "[=]" '{print $2}')
-    fi
-    
-    # 获取IP所在国家
-    IP_COUNTRY=$(curl -s http://ipinfo.io/${HOST_IP}/country)
-    
-    # 生成并保存客户端配置
-    cat << EOF > /usr/local/etc/xray/config.txt
-ss://2022-blake3-aes-128-gcm:${psk_urlsafe}@${HOST_IP}:${PORT1}#${IP_COUNTRY}
+    # 启用并重启服务
+    systemctl enable xray.service
+    systemctl restart xray.service
 
-${IP_COUNTRY} = ss, ${HOST_IP}, ${PORT1}, encrypt-method=2022-blake3-aes-128-gcm, password=${psk}, udp-relay=true
+    # 生成客户端 config.txt
+    HOST_IP=$(curl -s4 http://www.cloudflare.com/cdn-cgi/trace | awk -F= '/ip/ {print $2}')
+    [[ -z "$HOST_IP" ]] && HOST_IP=$(curl -s6 http://www.cloudflare.com/cdn-cgi/trace | awk -F= '/ip/ {print $2}')
+    IP_COUNTRY=$(curl -s http://ipinfo.io/${HOST_IP}/country)
+
+    cat >/usr/local/etc/xray/config.txt <<EOF
+ss://2022-blake3-aes-128-gcm:${psk_urlsafe}@${HOST_IP}:${PORT1}#${IP_COUNTRY}
 
 vless://${uuid}@${HOST_IP}:${PORT2}?encryption=none&security=reality&sni=www.tesla.com&fp=chrome&pbk=${PublicKey}&sid=123abc&type=xhttp&path=%2F${path}&mode=auto#${IP_COUNTRY}
 EOF
 
-    echo "Xray 安装完成"
-    cat /usr/local/etc/xray/config.txt
+    echo "Xray 安装完成，配置写入 /usr/local/etc/xray/config.txt"
 }
 
-# 主函数
 main() {
     root
-    port
     xray
 }
 
-# 执行脚本
 main
