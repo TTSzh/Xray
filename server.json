@@ -4,110 +4,60 @@
   },
   "inbounds": [  // 入站连接配置（服务器如何接收连接）
     {
-      "port": 8388,  // 第一个监听端口
+      "port": 44448,            // 固定为 44448（原 Shadowsocks 8388）
       "protocol": "shadowsocks",  // 使用 Shadowsocks 协议
       "settings": {
-        "method": "2022-blake3-aes-128-gcm",  // 加密方法，使用 2022 年推出的高安全性加密算法
-        "password": "${psk}",  // 预共享密钥 (可通过openssl rand -base64 16生成)
-        "network": "tcp,udp"  // 同时支持 TCP 和 UDP 流量
+        "method": "2022-blake3-aes-128-gcm",  // 加密方法
+        "password": "${psk}",                // 预共享密钥
+        "network": "tcp,udp"                 // 同时支持 TCP 和 UDP 流量
       }
     },
     {
-      "port": 443,        // VLESS 协议配置（V2Ray 的轻量级加密协议）
-      "protocol": "vless",  // 使用 VLESS 协议
+      "port": 2096,             // 固定为 2096（原 VLESS 443）
+      "protocol": "vless",       // 使用 VLESS 协议
       "settings": {
         "clients": [
           {
-            "id": "${uuid}",  //  (可通过 xray uuid 生成)
-            "flow": ""  // 流控模式，此处为空表示不启用，XHTTP传输模式下不需要也不支持"xtls-rprx-vision"流控
+            "id": "${uuid}",     // 客户端 UUID
+            "flow": ""           // 不启用流控
           }
         ],
-        "decryption": "none",  // VLESS 本身不加密，交由传输层处理
-        "fallbacks": []  // 回落配置，为空表示不启用回退功能
+        "decryption": "none",    // VLESS 本身不加密
+        "fallbacks": []          // 不启用回落
       },
-      "streamSettings": {    // 传输层设置
-        "network": "xhttp",  // 使用 xhttp 传输协议，一种 HTTP 的扩展
-        "security": "reality",  // 使用 REALITY 安全协议
+      "streamSettings": {        // 传输层设置
+        "network": "xhttp",      // 使用 xhttp 传输协议
+        "security": "reality",   // 使用 REALITY 安全协议
         "realitySettings": {
-          "show": false,  // 服务器日志中不会显示REALITY协议的详细连接信息，不会记录每个REALITY连接的握手过程和验证细节
-          "dest": "www.tesla.com:443",  // 目标网站最低标准：国外网站，支持 TLSv1.3、X25519 与 H2，域名非跳转用（主域名可能被用于跳转到 www）
-          "xver": 0,  // X-Forwarded-For 版本，0 表示不使用，服务器不会添加或修改任何X-Forwarded-For头信息，客户端的原始IP地址不会被转发到目标服务器
-          "serverNames": [
-            "www.tesla.com"  // // 客户端可用的 serverName 列表，暂不支持 * 通配符，在 Chrome 里输入 "dest" 的网址 -> F12 -> 安全 -> F5 -> 主要来源（安全），填证书中 SAN 的值
-          ],
-          "privateKey": "${rePrivateKey}",  // REALITY 私钥 (可通过 xray x25519 密钥生成)
-          "shortIds": [
-            "123abc"  // // 客户端可用的 shortId 列表，可用于区分不同的客户端，0 到 f，长度为 2 的倍数，长度上限为 16，可留空，或执行 openssl rand -hex 3 生成
-          ],
-          "fingerprint": "chrome"  // 伪装成Chrome浏览器的TLS指纹，增加伪装效果
+          "show": false,                             // 不在日志显示握手细节
+          "dest": "www.tesla.com:443",               // 目标网站
+          "xver": 0,                                 // 不使用 X-Forwarded-For
+          "serverNames": ["www.tesla.com"],          // TLS SNI 名称
+          "privateKey": "${rePrivateKey}",           // REALITY 私钥
+          "shortIds": ["123abc"],                    // shortId 列表
+          "fingerprint": "chrome"                    // 模拟 Chrome 指纹
         },
-        "xhttpSettings": {   // xhttp 协议特定设置
-          "path": "/xhttp",  // 服务器路径，客户端需要匹配此路径
-          "host": "",  // 主机头，为空则使用默认值或由客户端实际请求决定
-          "headers": {},  // 额外的HTTP头信息，为空表示不添加自定义头
-          "scMaxBufferedPosts": 30,  // 服务器端最大缓冲POST请求数，限制并发处理能力
-          "scMaxEachPostBytes": "1000000",  // 每个POST请求最大字节数（1MB），限制单个请求大小
-          "noSSEHeader": false,  // 不禁用SSE（Server-Sent Events）头，保持默认行为
-          "xPaddingBytes": "100-1000",  // 添加100-1000字节的随机填充，增加流量混淆效果
-          "mode": "auto"  // 自动选择最佳传输模式，基于网络环境和设备性能
+        "xhttpSettings": {     // xhttp 协议特定设置
+          "path": "/xhttp",    // 客户端必须匹配此路径
+          "host": "",          // Host 头，留空使用默认
+          "headers": {},       // 不添加额外头
+          "scMaxBufferedPosts": 30,
+          "scMaxEachPostBytes": "1000000",
+          "noSSEHeader": false,
+          "xPaddingBytes": "100-1000",
+          "mode": "auto"
         }
       },
-      "sniffing": {       // 流量探测设置
-        "enabled": true,  // 启用流量探测
-        "destOverride": [  // 可覆盖的目标协议类型
-          "http", 
-          "tls", 
-          "quic"
-        ]  
+      "sniffing": {             // 流量探测设置
+        "enabled": true,        // 启用流量探测
+        "destOverride": ["http","tls","quic"]
       }
     }
   ],
   "outbounds": [    // 出站连接配置（如何发送流量）
     {
-      "protocol": "freedom",  // 使用freedom协议，表示直接连接目标，不经过其他代理
-      "tag": "direct"  // 标签名称，用于路由规则引用，便于管理不同的出站策略
+      "protocol": "freedom",  // 直接连接目标，不走代理
+      "tag": "direct"         // 标签供路由引用
     }
   ]
-}
-
-
-
-"xhttpSettings": {
-    "host": "example.com",  // 主机名，设置HTTP请求头中的Host字段
-    "path": "/yourpath",    // 请求路径，客户端和服务器必须保持一致
-    "mode": "auto",         // 传输模式，auto表示自动选择最佳模式
-    "extra": {              // 额外高级设置
-        "headers": {        // 自定义HTTP请求头
-            // "key": "value"  // 可以添加自定义的HTTP头，如User-Agent等
-        },
-        "xPaddingBytes": "100-1000",  // 添加100-1000字节的随机填充数据，增强隐蔽性
-        "noGRPCHeader": false,        // 是否禁用gRPC头，仅适用于客户端的stream-up/one模式
-        "noSSEHeader": false,         // 是否禁用SSE(服务器发送事件)头，仅适用于服务器
-        "scMaxEachPostBytes": 1000000, // 每个POST请求的最大字节数，仅适用于packet-up模式
-        "scMinPostsIntervalMs": 30,    // 客户端POST请求的最小间隔时间(毫秒)，仅适用于packet-up模式
-        "scMaxBufferedPosts": 30,      // 服务器最大缓存的POST请求数量，仅适用于packet-up模式
-        "scStreamUpServerSecs": "20-80", // stream-up模式下服务器连接保持时间(秒)，仅适用于服务器
-        "xmux": {                      // 多路复用设置，主要用于h2/h3协议，仅适用于客户端
-            "maxConcurrency": "16-32",  // 单个连接的最大并发请求数，范围16-32
-            "maxConnections": 0,        // 最大连接数，0表示不限制
-            "cMaxReuseTimes": 0,        // 连接最大重用次数，0表示不限制
-            "hMaxRequestTimes": "600-900", // 单个连接最大请求次数，范围600-900
-            "hMaxReusableSecs": "1800-3000", // 连接最大重用时间(秒)，范围1800-3000
-            "hKeepAlivePeriod": 0       // 保持活动检测周期，0表示使用系统默认值
-        },
-        "downloadSettings": {          // 下载设置，仅适用于客户端
-            "address": "",             // 下载使用的域名/IP，可与上传不同
-            "port": 443,               // 下载使用的端口
-            "network": "xhttp",        // 下载使用的网络协议
-            "security": "tls",         // 下载使用的安全协议
-            "tlsSettings": {           // TLS设置
-                // ...                 // 此处省略TLS详细设置
-            },
-            "xhttpSettings": {         // 下载时的xhttp设置
-                "path": "/yourpath",   // 路径必须与上传设置相同
-                // ...                 // 此处省略其他xhttp设置
-            },
-            "sockopt": {}              // 套接字选项，如果上传设置的"penetrate"为true，将被上传设置的sockopt替换
-        }
-    }
 }
